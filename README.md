@@ -1,25 +1,26 @@
 # KATHE 2026 — English to Kashmiri Machine Translation
 
-This repository contains the inference code for the KATHE 2026
-English → Kashmiri machine translation submission.
+Inference code for the KATHE 2026 English → Kashmiri machine
+translation challenge.
 
 ## Model
 
-Current submission model:
+The repository loads the current submission LoRA adapter from Hugging Face.
 
-`unsloth/Qwen2.5-7B-Instruct-bnb-4bit`
+The inference code automatically detects whether the uploaded adapter
+uses:
 
-with a PEFT LoRA adapter trained for English → Kashmiri translation.
+- a causal language model architecture, such as Qwen, or
+- an encoder-decoder translation architecture, such as NLLB.
 
-The trained adapter is hosted separately on Hugging Face.
-
-Hugging Face model:
-
-`YOUR_HF_USERNAME/kashmiri-qwen-2527-lora`
+The Hugging Face adapter repository contains the actual model-specific
+weights and configuration.
 
 ## Dataset
 
-The model was trained using the AI4Bharat BPCC dataset.
+Training data:
+
+AI4Bharat BPCC
 
 Configuration:
 
@@ -29,17 +30,16 @@ Language split:
 
 `kas_Arab`
 
-Training data:
+Training examples:
 
-98,929 English/Kashmiri examples.
+98,929
 
 ## Methodology
 
-The translation pipeline uses the Qwen instruction-tuned language model
-with a trained LoRA adapter.
+### Causal-LM inference
 
-Inference uses deterministic beam search with an adaptive decoding
-ladder:
+For the Qwen-style causal language model, inference uses an adaptive
+decoding ladder:
 
 1. repetition penalty 1.05
 2. repetition penalty 1.10
@@ -47,30 +47,34 @@ ladder:
 4. repetition penalty 1.10 + no-repeat 3-gram constraint
 5. repetition penalty 1.15 + no-repeat 3-gram constraint
 
-Outputs are rejected when they exhibit:
+Outputs are rejected when they contain:
 
-- long repeated word cycles
+- repeated word cycles
 - repeated multi-word loops
-- empty or very short output
+- extremely short output
 - excessively long output
-- the 256-token generation ceiling
+- generation reaching the 256-token limit
 
-Accepted outputs receive conservative Kashmiri orthographic
-normalization.
+Accepted outputs receive conservative Kashmiri orthographic normalization.
 
-Normalization includes:
+### Encoder-decoder inference
 
-- `ے` → `ی`
-- `ك` → `ک`
-- ASCII comma → Kashmiri/Arabic comma `،`
+For NLLB-style sequence-to-sequence models, the inference pipeline uses:
+
+- 6-beam search
+- length penalty 1.2
+- repetition penalty 1.2
+- no-repeat 3-gram constraint
+- Kashmiri `kas_Arab` target language forcing
 
 ## Repository structure
 
 ```text
 .
-├── batch_inference.py
-├── single_inference.py
-├── load_model.py
-├── requirements.txt
 ├── README.md
-└── LICENSE
+├── LICENSE
+├── load_model.py
+├── single_inference.py
+├── batch_inference.py
+├── requirements.txt
+└── .gitignore
