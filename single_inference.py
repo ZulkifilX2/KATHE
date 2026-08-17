@@ -1,9 +1,21 @@
-import torch
+# ============================================================
+# KATHE 2026 - SINGLE SENTENCE INFERENCE
+# Supports:
+#   - Qwen causal-LM adapter
+#   - NLLB seq2seq adapter
+# ============================================================
+
 import re
+
+import torch
+
+from load_model import (
+    load_translator_model,
+)
 
 
 # ============================================================
-# PROMPT
+# QWEN PROMPT
 # ============================================================
 
 SYSTEM_PROMPT = (
@@ -13,7 +25,7 @@ SYSTEM_PROMPT = (
 )
 
 
-def build_prompt(
+def build_qwen_prompt(
     source_text: str,
 ) -> str:
 
@@ -53,7 +65,7 @@ def detect_repetition_loop(
         1,
         min(
             max_ngram,
-            len(words)
+            len(words),
         ) + 1,
     ):
 
@@ -63,7 +75,7 @@ def detect_repetition_loop(
         ):
 
             block = words[
-                i:i+n
+                i:i + n
             ]
 
             repeated = True
@@ -124,7 +136,7 @@ def detect_repetition_loop(
         ):
 
             block = tail[
-                start:start+n
+                start:start + n
             ]
 
             repetitions = 1
@@ -133,7 +145,7 @@ def detect_repetition_loop(
             while (
                 pos + n <= len(tail)
                 and tail[
-                    pos:pos+n
+                    pos:pos + n
                 ] == block
             ):
 
@@ -152,7 +164,7 @@ def detect_repetition_loop(
 
 
 # ============================================================
-# ORTHOGRAPHIC NORMALIZATION
+# KASHMIRI NORMALIZATION
 # ============================================================
 
 def normalize_kashmiri(
@@ -231,7 +243,7 @@ def clean_kashmiri_output(
 
 
 # ============================================================
-# BAD OUTPUT CHECK
+# OUTPUT VALIDATION
 # ============================================================
 
 def is_bad_output(
@@ -254,6 +266,7 @@ def is_bad_output(
     if len(text) > 300:
         return True
 
+    # Treat maximum-length generation as suspicious.
     if generated_tokens >= 256:
         return True
 
@@ -268,7 +281,7 @@ def is_bad_output(
 
 
 # ============================================================
-# DECODING LADDER
+# QWEN DECODING LADDER
 # ============================================================
 
 DECODING_STEPS = [
@@ -306,19 +319,17 @@ DECODING_STEPS = [
 
 
 # ============================================================
-# ONE GENERATION ATTEMPT
+# QWEN GENERATION
 # ============================================================
 
-def _generate_attempt(
-    source_text: str,
+def translate_qwen(
+    text: str,
     model,
     tokenizer,
-    repetition_penalty: float,
-    no_repeat_ngram_size: int,
 ):
 
-    prompt = build_prompt(
-        source_text
+    prompt = build_qwen_prompt(
+        text
     )
 
     inputs = tokenizer(
@@ -334,51 +345,117 @@ def _generate_attempt(
         inputs["input_ids"].shape[-1]
     )
 
+    last_text = ""
+
+    for config in DECODING_STEPS:
+
+        with torch.no_grad():
+
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=256,
+                num_beams=3,
+                do_sample=False,
+                repetition_penalty=(
+                    config[
+                        "repetition_penalty"
+                    ]
+                ),
+                no_repeat_ngram_size=(
+                    config[
+                        "no_repeat_ngram_size"
+                    ]
+                ),
+                pad_token_id=(
+                    tokenizer.eos_token_id
+                ),
+            )
+
+        generated_tokens = (
+            outputs[0][prompt_length:]
+        )
+
+        text_out = tokenizer.decode(
+            generated_tokens,
+            skip_special_tokens=True,
+        ).strip()
+
+        last_text = text_out
+
+        if not is_bad_output(
+            text_out,
+            len(generated_tokens),
+        ):
+
+            return normalize_kashmiri(
+                clean_kashmiri_output(
+                    text_out
+                )
+            )
+
+    return normalize_kashmiri(
+        clean_kashmiri_output(
+            last_text
+        )
+    )
+
+
+# ============================================================
+# NLLB GENERATION
+# ============================================================
+
+def translate_nllb(
+    text: str,
+    model,
+    tokenizer,
+):
+
+    inputs = tokenizer(
+        text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=128,
+    ).to(
+        model.device
+    )
+
+    kas_id = tokenizer.convert_tokens_to_ids(
+        "kas_Arab"
+    )
+
+    if kas_id is None:
+        raise RuntimeError(
+            "Could not find kas_Arab token ID."
+        )
+
     with torch.no_grad():
 
         outputs = model.generate(
             **inputs,
-            max_new_tokens=256,
-            num_beams=3,
-            do_sample=False,
-            repetition_penalty=(
-                repetition_penalty
-            ),
-            no_repeat_ngram_size=(
-                no_repeat_ngram_size
-            ),
-            pad_token_id=(
-                tokenizer.eos_token_id
-            ),
+
+            forced_bos_token_id=kas_id,
+
+            max_new_tokens=128,
+
+            num_beams=6,
+
+            length_penalty=1.2,
+
+            repetition_penalty=1.2,
+
+            no_repeat_ngram_size=3,
         )
 
-    generated_tokens = (
-        outputs[0][prompt_length:]
-    )
-
-    text = tokenizer.decode(
-        generated_tokens,
+    translated = tokenizer.batch_decode(
+        outputs,
         skip_special_tokens=True,
-    ).strip()
+    )[0]
 
-    loop, pattern, run_length = (
-        detect_repetition_loop(
-            text,
-            min_run=3,
-            max_ngram=8,
-            tail_tokens=80,
+    return normalize_kashmiri(
+        clean_kashmiri_output(
+            translated
         )
     )
-
-    return {
-        "text": text,
-        "tokens": len(
-            generated_tokens
-        ),
-        "is_loop": loop,
-        "pattern": pattern,
-        "run_length": run_length,
-    }
 
 
 # ============================================================
@@ -389,67 +466,41 @@ def translate_sentence(
     text: str,
     model,
     tokenizer,
+    is_encoder_decoder: bool = None,
 ) -> str:
 
-    last_text = ""
+    if is_encoder_decoder is None:
 
-    for config in DECODING_STEPS:
+        raise ValueError(
+            "is_encoder_decoder must be supplied."
+        )
 
-        result = _generate_attempt(
+    if is_encoder_decoder:
+
+        return translate_nllb(
             text,
             model,
             tokenizer,
-            repetition_penalty=(
-                config[
-                    "repetition_penalty"
-                ]
-            ),
-            no_repeat_ngram_size=(
-                config[
-                    "no_repeat_ngram_size"
-                ]
-            ),
         )
 
-        last_text = result["text"]
-
-        bad = is_bad_output(
-            result["text"],
-            result["tokens"],
-        )
-
-        if not bad:
-
-            cleaned = (
-                clean_kashmiri_output(
-                    result["text"]
-                )
-            )
-
-            return normalize_kashmiri(
-                cleaned
-            )
-
-    # --------------------------------------------------------
-    # Final fallback
-    # --------------------------------------------------------
-
-    return normalize_kashmiri(
-        clean_kashmiri_output(
-            last_text
-        )
+    return translate_qwen(
+        text,
+        model,
+        tokenizer,
     )
 
+
+# ============================================================
+# TEST
+# ============================================================
 
 if __name__ == "__main__":
 
-    from load_model import (
-        load_translator_model
-    )
-
-    model, tokenizer = (
-        load_translator_model()
-    )
+    (
+        model,
+        tokenizer,
+        is_encoder_decoder,
+    ) = load_translator_model()
 
     test_sentence = (
         "She was a true visionary."
@@ -459,14 +510,19 @@ if __name__ == "__main__":
         test_sentence,
         model,
         tokenizer,
+        is_encoder_decoder,
     )
 
     print(
-        "Source:",
+        "\nSource:",
         test_sentence,
     )
 
     print(
         "Translation:",
         translation,
+    )
+
+    print(
+        "\n✅ Single inference test completed"
     )
