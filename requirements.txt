@@ -1,4 +1,7 @@
-torch
-transformers
-peft
-pandas
+torch>=2.10
+transformers>=5.0
+peft>=0.18
+accelerate>=1.0
+pandas>=2.0
+sentencepiece
+safetensors
