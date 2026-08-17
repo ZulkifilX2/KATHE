@@ -1,34 +1,82 @@
+import os
+
 import torch
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+)
+
 from peft import PeftModel
 
-# NOTE: We will replace this with your actual HF username
-HF_REPO_ID = "YOUR_HF_USERNAME/kathe-2026-nllb-1.3b"
-BASE_MODEL_NAME = "facebook/nllb-200-distilled-1.3B"
+
+# ============================================================
+# CONFIGURATION
+# ============================================================
+
+# Replace this with your actual Hugging Face repository.
+HF_REPO_ID = "NyxT-T/kathe-2026-kashmiri"
+
+BASE_MODEL_NAME = (
+    "unsloth/Qwen2.5-7B-Instruct-bnb-4bit"
+)
+
+
+# ============================================================
+# LOAD MODEL
+# ============================================================
 
 def load_translator_model():
-    """Loads base NLLB 1.3B and attaches the fine-tuned LoRA adapter."""
-    print(f"Loading tokenizer from {BASE_MODEL_NAME}...")
-    tokenizer = AutoTokenizer.from_pretrained(
-        BASE_MODEL_NAME, 
-        src_lang="eng_Latn", 
-        tgt_lang="kas_Arab"
+    """
+    Load the base Qwen model and attach the trained
+    Kashmiri LoRA adapter from Hugging Face.
+    """
+
+    print(
+        f"Loading tokenizer from {BASE_MODEL_NAME}..."
     )
-    
-    print("Loading base model in FP16...")
-    base_model = AutoModelForSeq2SeqLM.from_pretrained(
+
+    tokenizer = AutoTokenizer.from_pretrained(
+        BASE_MODEL_NAME,
+        trust_remote_code=True,
+    )
+
+    print(
+        "Loading base Qwen model..."
+    )
+
+    base_model = AutoModelForCausalLM.from_pretrained(
         BASE_MODEL_NAME,
         torch_dtype=torch.float16,
-        device_map="auto"
+        device_map="auto",
+        trust_remote_code=True,
     )
-    
-    print(f"Downloading and attaching LoRA weights from {HF_REPO_ID}...")
-    model = PeftModel.from_pretrained(base_model, HF_REPO_ID)
+
+    print(
+        f"Loading LoRA adapter from {HF_REPO_ID}..."
+    )
+
+    model = PeftModel.from_pretrained(
+        base_model,
+        HF_REPO_ID,
+        is_trainable=False,
+    )
+
     model.eval()
-    
+
+    print(
+        "✅ Model and adapter loaded successfully"
+    )
+
     return model, tokenizer
 
+
 if __name__ == "__main__":
-    print("Testing model loading script...")
-    model, tokenizer = load_translator_model()
-    print("✅ Model and tokenizer loaded successfully!")
+
+    model, tokenizer = (
+        load_translator_model()
+    )
+
+    print(
+        "✅ Model loading test passed"
+    )
