@@ -5,3 +5,5 @@ accelerate>=1.0
 pandas>=2.0
 sentencepiece
 safetensors
+bitsandbytes>=0.46.1
+huggingface_hub>=0.30
