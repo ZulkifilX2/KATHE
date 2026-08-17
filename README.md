@@ -69,7 +69,6 @@ For NLLB-style sequence-to-sequence models, the inference pipeline uses:
 
 ## Repository structure
 
-```text
 .
 ├── README.md
 ├── LICENSE
@@ -78,3 +77,37 @@ For NLLB-style sequence-to-sequence models, the inference pipeline uses:
 ├── batch_inference.py
 ├── requirements.txt
 └── .gitignore
+
+## Installation
+pip install -r requirements.txt
+Model configuration
+
+Set the Hugging Face adapter repository using:
+
+export KATHE_HF_REPO="NyxT-T/kathe-2026-kashmiri"
+
+No Hugging Face access token is stored in this repository.
+
+Test model loading
+python load_model.py
+Test single inference
+python single_inference.py
+Run competition inference
+
+Place englishdev.csv in the working directory and run:
+
+python batch_inference.py englishdev.csv submission.csv
+
+The input must contain:
+
+ID
+sentence
+
+The output contains:
+
+ID
+kashmiri_text
+
+## Competition
+KATHE 2026
+English → Kashmiri machine translation.
