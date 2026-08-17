@@ -216,3 +216,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+.env
+*.env
+__pycache__/
+*.pyc
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.zip
+submission*.csv
+englishdev.csv
