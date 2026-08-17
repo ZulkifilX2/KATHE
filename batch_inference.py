@@ -1,3 +1,7 @@
+# ============================================================
+# KATHE 2026 - BATCH INFERENCE
+# ============================================================
+
 import sys
 
 import pandas as pd
@@ -17,45 +21,70 @@ def batch_translate(
 ):
 
     print(
-        f"Loading data from {input_csv_path}..."
+        f"Loading:\n{input_csv_path}"
     )
 
     df = pd.read_csv(
         input_csv_path
     )
 
-    if "sentence" not in df.columns:
-        raise ValueError(
-            "Input CSV must contain a 'sentence' column."
-        )
+    # --------------------------------------------------------
+    # Validate competition input
+    # --------------------------------------------------------
 
     if "ID" not in df.columns:
         raise ValueError(
             "Input CSV must contain an 'ID' column."
         )
 
-    model, tokenizer = (
-        load_translator_model()
+    if "sentence" not in df.columns:
+        raise ValueError(
+            "Input CSV must contain a 'sentence' column."
+        )
+
+    print(
+        "Rows:",
+        len(df)
     )
+
+    print(
+        "Columns:",
+        df.columns.tolist()
+    )
+
+    # --------------------------------------------------------
+    # Load model
+    # --------------------------------------------------------
+
+    (
+        model,
+        tokenizer,
+        is_encoder_decoder,
+    ) = load_translator_model()
+
+    # --------------------------------------------------------
+    # Translate
+    # --------------------------------------------------------
 
     translations = []
 
     total = len(df)
 
     print(
-        f"Translating {total} sentences..."
+        f"\nTranslating {total} sentences..."
     )
 
-    for i, text in enumerate(
+    for i, source_text in enumerate(
         df["sentence"],
         start=1,
     ):
 
         translation = (
             translate_sentence(
-                str(text),
+                str(source_text),
                 model,
                 tokenizer,
+                is_encoder_decoder,
             )
         )
 
@@ -69,6 +98,10 @@ def batch_translate(
                 f"Processed {i}/{total}"
             )
 
+    # --------------------------------------------------------
+    # Submission
+    # --------------------------------------------------------
+
     submission = pd.DataFrame({
         "ID": df["ID"],
         "kashmiri_text": translations,
@@ -79,12 +112,48 @@ def batch_translate(
         index=False,
     )
 
+    # --------------------------------------------------------
+    # Validation
+    # --------------------------------------------------------
+
+    assert len(submission) == total
+
+    assert list(
+        submission.columns
+    ) == [
+        "ID",
+        "kashmiri_text",
+    ]
+
+    empty = (
+        submission[
+            "kashmiri_text"
+        ]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .eq("")
+        .sum()
+    )
+
+    if empty > 0:
+
+        raise RuntimeError(
+            f"❌ {empty} empty translations found."
+        )
+
     print(
-        f"\n✅ Batch inference complete."
+        "\n✅ Batch inference complete"
     )
 
     print(
-        f"Saved to {output_csv_path}"
+        "Output:",
+        output_csv_path
+    )
+
+    print(
+        "Rows:",
+        len(submission)
     )
 
 
